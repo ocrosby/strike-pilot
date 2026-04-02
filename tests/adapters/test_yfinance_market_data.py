@@ -228,3 +228,56 @@ class TestYFinanceMarketDataAdapter:
         adapter = YFinanceMarketDataAdapter()
         with pytest.raises(ValueError, match="No data available"):
             adapter.get_snapshot("SPX")
+
+    def test_non_index_symbol_not_prefixed(self, mocker: pytest.MonkeyPatch) -> None:
+        """Equity symbols (e.g. AAPL) must be passed to yfinance unchanged."""
+        price_df = _make_price_df()
+        vix_df = _make_vix_df()
+        called_with: list[str] = []
+
+        def ticker_factory(symbol: str) -> object:
+            called_with.append(symbol)
+            mock = mocker.MagicMock()
+            mock.history.return_value = vix_df if symbol == "^VIX" else price_df
+            return mock
+
+        mocker.patch(
+            "strike_pilot.adapters.yfinance_market_data.yf.Ticker", side_effect=ticker_factory
+        )
+
+        adapter = YFinanceMarketDataAdapter()
+        adapter.get_snapshot("AAPL")
+
+        assert "AAPL" in called_with
+        assert "^AAPL" not in called_with
+
+    def test_rsi_normal_path_with_mixed_price_changes(self, mocker: pytest.MonkeyPatch) -> None:
+        """RSI must be < 100 when there are losing days (avg_loss != 0)."""
+        # Alternating up/down days ensure avg_loss != 0, exercising the normal RSI formula.
+        closes = [5200.0 + (1.0 if i % 2 == 0 else -0.5) * i for i in range(60)]
+        dates = pd.date_range(end="2024-01-19", periods=60, freq="B")
+        price_df = pd.DataFrame(
+            {
+                "Open": [c - 2.0 for c in closes],
+                "High": [c + 3.0 for c in closes],
+                "Low": [c - 3.0 for c in closes],
+                "Close": closes,
+                "Volume": [1_000_000] * 60,
+            },
+            index=dates,
+        )
+        vix_df = _make_vix_df()
+
+        def ticker_factory(symbol: str) -> object:
+            mock = mocker.MagicMock()
+            mock.history.return_value = vix_df if symbol == "^VIX" else price_df
+            return mock
+
+        mocker.patch(
+            "strike_pilot.adapters.yfinance_market_data.yf.Ticker", side_effect=ticker_factory
+        )
+
+        adapter = YFinanceMarketDataAdapter()
+        result = adapter.get_snapshot("SPX")
+
+        assert 0.0 < result.rsi_14 < 100.0

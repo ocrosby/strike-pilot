@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import pandas as pd
 from click.testing import CliRunner
 
 from strike_pilot.cli.commands import cli
@@ -222,6 +225,27 @@ class TestBacktestCommand:
         result = runner.invoke(cli, ["backtest", "--end", "2024-01-19"])
         assert result.exit_code != 0
 
+    def test_backtest_live_data_source_runs(self) -> None:
+        """backtest --data-source live must instantiate YFinanceHistoricalDataAdapter."""
+        with patch(
+            "strike_pilot.adapters.yfinance_historical.yf.download",
+            return_value=pd.DataFrame(),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "backtest",
+                    "--start",
+                    "2024-01-15",
+                    "--end",
+                    "2024-01-19",
+                    "--data-source",
+                    "live",
+                ],
+            )
+        assert result.exit_code == 0
+
 
 class TestServeCommand:
     def test_serve_help_exits_zero(self) -> None:
@@ -238,3 +262,11 @@ class TestServeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["serve", "--help"])
         assert "port" in result.output
+
+    def test_serve_command_starts_server(self) -> None:
+        """serve command must call uvicorn.run without actually binding a port."""
+        with patch("uvicorn.run") as mock_run:
+            runner = CliRunner()
+            result = runner.invoke(cli, ["serve"])
+        assert result.exit_code == 0
+        mock_run.assert_called_once()
