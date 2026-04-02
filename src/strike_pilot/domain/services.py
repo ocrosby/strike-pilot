@@ -51,7 +51,7 @@ class SimpleMomentumBiasStrategy:
     """
 
     def analyze(self, snapshot: MarketSnapshot) -> MarketBias:
-        """Analyze price momentum and RSI to determine bias."""
+        """Analyze price momentum, RSI, and IV signals to determine bias."""
         signals: list[float] = []
 
         # Price vs open: normalize so a 1% move = 0.5, 2% = 1.0
@@ -80,26 +80,61 @@ class SimpleMomentumBiasStrategy:
         raw_confidence = alignment_ratio * 0.5 + strength * 0.5
         adjusted_confidence = max(0.0, raw_confidence - vix_penalty)
 
+        # IV rank/percentile adjustment: high IV favours premium selling
+        iv_bonus = self._iv_confidence_adjustment(snapshot)
+        adjusted_confidence = adjusted_confidence + iv_bonus
+
+        # Build rationale parts
+        iv_note = self._iv_rationale(snapshot)
+
         if avg_signal > 0.05:
             direction = BiasDirection.BULLISH
             rationale = (
-                f"Bullish momentum: price change {price_change_pct:.2%}, RSI {snapshot.rsi_14:.1f}"
+                f"Bullish momentum: price change {price_change_pct:.2%}, "
+                f"RSI {snapshot.rsi_14:.1f}{iv_note}"
             )
         elif avg_signal < -0.05:
             direction = BiasDirection.BEARISH
             rationale = (
-                f"Bearish momentum: price change {price_change_pct:.2%}, RSI {snapshot.rsi_14:.1f}"
+                f"Bearish momentum: price change {price_change_pct:.2%}, "
+                f"RSI {snapshot.rsi_14:.1f}{iv_note}"
             )
         else:
             direction = BiasDirection.NEUTRAL
             adjusted_confidence = max(adjusted_confidence, 0.3)
-            rationale = f"No clear direction: signal={avg_signal:.3f}"
+            rationale = f"No clear direction: signal={avg_signal:.3f}{iv_note}"
 
         return MarketBias(
             direction=direction,
             confidence=ConfidenceScore(round(min(1.0, max(0.0, adjusted_confidence)), 4)),
             rationale=rationale,
         )
+
+    @staticmethod
+    def _iv_confidence_adjustment(snapshot: MarketSnapshot) -> float:
+        """Return a confidence adjustment based on IV rank/percentile.
+
+        High IV rank (>50%) is favourable for selling premium → positive boost.
+        Low IV rank (<30%) is unfavourable → negative penalty.
+        When IV data is absent, returns 0.
+        """
+        iv = snapshot.iv_rank if snapshot.iv_rank is not None else snapshot.iv_percentile
+        if iv is None:
+            return 0.0
+        # Scale: iv=0.8 -> +0.06, iv=0.3 -> 0, iv=0.1 -> -0.04
+        return (iv - 0.3) * 0.2
+
+    @staticmethod
+    def _iv_rationale(snapshot: MarketSnapshot) -> str:
+        """Build an IV rationale fragment for the bias description."""
+        parts: list[str] = []
+        if snapshot.iv_rank is not None:
+            parts.append(f"IVR {snapshot.iv_rank:.0%}")
+        if snapshot.iv_percentile is not None:
+            parts.append(f"IVP {snapshot.iv_percentile:.0%}")
+        if parts:
+            return ", " + ", ".join(parts)
+        return ""
 
 
 class DeltaBasedStrikeSelector:

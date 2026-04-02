@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from strike_pilot.domain.expiry import resolve_expiry
 from strike_pilot.domain.models import (
+    ExpiryCategory,
+    ExpiryRecommendation,
     MarketBias,
     NoTradeSignal,
     RiskParameters,
@@ -20,6 +23,7 @@ from strike_pilot.ports.interfaces import (
     MarketDataProvider,
     OptionsChainProvider,
     OutputPresenter,
+    RecommendationLogger,
 )
 
 
@@ -44,6 +48,7 @@ class AnalyzeAndRecommendUseCase:
         strike_selector: StrikeSelectionStrategy,
         presenter: OutputPresenter,
         clock: Clock,
+        logger: RecommendationLogger | None = None,
     ) -> None:
         self._market_data = market_data_provider
         self._options_chain = options_chain_provider
@@ -51,6 +56,7 @@ class AnalyzeAndRecommendUseCase:
         self._strike_selector = strike_selector
         self._presenter = presenter
         self._clock = clock
+        self._logger = logger
 
     def execute(
         self,
@@ -79,7 +85,52 @@ class AnalyzeAndRecommendUseCase:
         self._presenter.present_bias(bias)
         self._presenter.present_recommendation(result)
 
+        if self._logger is not None:
+            self._logger.log(bias, result)
+
         return bias, result
+
+    def execute_multi(
+        self,
+        symbol: str,
+        risk_params: RiskParameters,
+        categories: list[ExpiryCategory] | None = None,
+    ) -> tuple[MarketBias, list[ExpiryRecommendation]]:
+        """Run analysis for multiple expiry categories.
+
+        Args:
+            symbol: Market symbol to analyze (e.g., "SPX").
+            risk_params: Risk constraints for the trade recommendations.
+            categories: Expiry categories to evaluate. Defaults to [WEEKLY].
+
+        Returns:
+            Tuple of (MarketBias, list of ExpiryRecommendation).
+        """
+        cats = categories or [ExpiryCategory.WEEKLY]
+        now = self._clock.now()
+
+        snapshot = self._market_data.get_snapshot(symbol)
+        bias = self._bias_strategy.analyze(snapshot)
+
+        # Resolve dates and deduplicate chain fetches
+        category_dates = [(cat, resolve_expiry(cat, now)) for cat in cats]
+        unique_dates = {date for _, date in category_dates}
+        chains = {date: self._options_chain.get_chain(symbol, date) for date in unique_dates}
+
+        recommendations: list[ExpiryRecommendation] = []
+        for cat, date in category_dates:
+            result = self._strike_selector.select_strikes(chains[date], bias, risk_params)
+            recommendations.append(
+                ExpiryRecommendation(category=cat, expiry_date=date, result=result)
+            )
+
+        self._presenter.present_multi_recommendations(bias, recommendations)
+
+        if self._logger is not None:
+            for rec in recommendations:
+                self._logger.log(bias, rec.result)
+
+        return bias, recommendations
 
     @staticmethod
     def _next_friday(from_date: datetime) -> str:

@@ -14,6 +14,8 @@ from strike_pilot.adapters.presenters import ConsolePresenter, JsonPresenter
 from strike_pilot.domain.models import (
     BiasDirection,
     ConfidenceScore,
+    ExpiryCategory,
+    ExpiryRecommendation,
     MarketBias,
     NoTradeSignal,
     SpreadLeg,
@@ -176,3 +178,79 @@ class TestJsonPresenter:
         data = json.loads(captured.out)
         assert data["recommendation"]["action"] == "trade"
         assert data["recommendation"]["net_credit"] == 150.0
+
+
+def _make_expiry_recs() -> tuple[MarketBias, list[ExpiryRecommendation]]:
+    """Build a bias and two ExpiryRecommendation entries for testing."""
+    bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+    short_leg = SpreadLeg(
+        strike=5200.0, expiry="2024-01-19", option_type="put", action="sell", premium=3.0
+    )
+    long_leg = SpreadLeg(
+        strike=5195.0, expiry="2024-01-19", option_type="put", action="buy", premium=1.5
+    )
+    rec = SpreadRecommendation(
+        spread_type=SpreadType.BULL_PUT,
+        short_leg=short_leg,
+        long_leg=long_leg,
+        net_credit=150.0,
+        max_loss=350.0,
+        bias=bias,
+    )
+    no_trade = NoTradeSignal(reason="Low confidence")
+    recs = [
+        ExpiryRecommendation(category=ExpiryCategory.WEEKLY, expiry_date="2024-01-19", result=rec),
+        ExpiryRecommendation(
+            category=ExpiryCategory.MONTHLY, expiry_date="2024-02-16", result=no_trade
+        ),
+    ]
+    return bias, recs
+
+
+class TestConsolePresenterMulti:
+    def test_presents_all_categories(self, capsys: pytest.CaptureFixture) -> None:
+        presenter = ConsolePresenter()
+        bias, recs = _make_expiry_recs()
+        presenter.present_multi_recommendations(bias, recs)
+        out = capsys.readouterr().out
+        assert "WEEKLY" in out
+        assert "MONTHLY" in out
+        assert "2024-01-19" in out
+        assert "2024-02-16" in out
+
+    def test_includes_bias_header(self, capsys: pytest.CaptureFixture) -> None:
+        presenter = ConsolePresenter()
+        bias, recs = _make_expiry_recs()
+        presenter.present_multi_recommendations(bias, recs)
+        out = capsys.readouterr().out
+        assert "BULLISH" in out
+
+
+class TestJsonPresenterMulti:
+    def test_produces_valid_json(self, capsys: pytest.CaptureFixture) -> None:
+        presenter = JsonPresenter()
+        bias, recs = _make_expiry_recs()
+        presenter.present_multi_recommendations(bias, recs)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert "bias" in data
+        assert "recommendations" in data
+        assert len(data["recommendations"]) == 2
+
+    def test_categories_in_output(self, capsys: pytest.CaptureFixture) -> None:
+        presenter = JsonPresenter()
+        bias, recs = _make_expiry_recs()
+        presenter.present_multi_recommendations(bias, recs)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        categories = [r["category"] for r in data["recommendations"]]
+        assert categories == ["weekly", "monthly"]
+
+    def test_trade_and_no_trade_in_output(self, capsys: pytest.CaptureFixture) -> None:
+        presenter = JsonPresenter()
+        bias, recs = _make_expiry_recs()
+        presenter.present_multi_recommendations(bias, recs)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["recommendations"][0]["action"] == "trade"
+        assert data["recommendations"][1]["action"] == "no_trade"

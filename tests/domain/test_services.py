@@ -21,6 +21,8 @@ def make_snapshot(
     rsi_14: float = 58.0,
     vix: float = 16.0,
     sma_20: float = 5200.0,
+    iv_rank: float | None = None,
+    iv_percentile: float | None = None,
 ) -> MarketSnapshot:
     return MarketSnapshot(
         symbol="SPX",
@@ -33,6 +35,8 @@ def make_snapshot(
         sma_20=sma_20,
         sma_50=5150.0,
         rsi_14=rsi_14,
+        iv_rank=iv_rank,
+        iv_percentile=iv_percentile,
     )
 
 
@@ -112,6 +116,34 @@ class TestSimpleMomentumBiasStrategy:
         strategy = SimpleMomentumBiasStrategy()
         bias = strategy.analyze(make_snapshot())
         assert 0.0 <= bias.confidence.value <= 1.0
+
+    def test_high_iv_rank_boosts_confidence(self) -> None:
+        strategy = SimpleMomentumBiasStrategy()
+        no_iv = strategy.analyze(make_snapshot(price=5270.0, open_price=5200.0))
+        high_iv = strategy.analyze(make_snapshot(price=5270.0, open_price=5200.0, iv_rank=0.85))
+        assert high_iv.confidence.value >= no_iv.confidence.value
+
+    def test_low_iv_rank_suppresses_confidence(self) -> None:
+        strategy = SimpleMomentumBiasStrategy()
+        no_iv = strategy.analyze(make_snapshot(price=5270.0, open_price=5200.0))
+        low_iv = strategy.analyze(make_snapshot(price=5270.0, open_price=5200.0, iv_rank=0.10))
+        assert low_iv.confidence.value <= no_iv.confidence.value
+
+    def test_iv_rank_in_rationale(self) -> None:
+        strategy = SimpleMomentumBiasStrategy()
+        bias = strategy.analyze(make_snapshot(iv_rank=0.62))
+        assert "IVR 62%" in bias.rationale
+
+    def test_iv_percentile_in_rationale(self) -> None:
+        strategy = SimpleMomentumBiasStrategy()
+        bias = strategy.analyze(make_snapshot(iv_percentile=0.55))
+        assert "IVP 55%" in bias.rationale
+
+    def test_no_iv_data_no_iv_in_rationale(self) -> None:
+        strategy = SimpleMomentumBiasStrategy()
+        bias = strategy.analyze(make_snapshot())
+        assert "IVR" not in bias.rationale
+        assert "IVP" not in bias.rationale
 
 
 class TestDeltaBasedStrikeSelector:

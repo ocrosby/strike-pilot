@@ -34,8 +34,11 @@ src = ["src"]
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "ANN", "B", "C4", "SIM", "RUF"]
+select = ["E", "F", "I", "N", "UP", "ANN", "B", "C4", "C90", "SIM", "RUF"]
 ignore = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 7
 
 [tool.ruff.format]
 quote-style = "double"

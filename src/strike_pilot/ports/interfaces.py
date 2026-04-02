@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from strike_pilot.domain.models import (
+    ExpiryRecommendation,
     MarketBias,
     MarketSnapshot,
     NoTradeSignal,
@@ -55,6 +56,27 @@ class OutputPresenter(Protocol):
 
     def present_recommendation(self, result: SpreadRecommendation | NoTradeSignal) -> None:
         """Present a spread recommendation or no-trade signal."""
+        ...
+
+    def present_multi_recommendations(
+        self,
+        bias: MarketBias,
+        recommendations: list[ExpiryRecommendation],
+    ) -> None:
+        """Present bias and recommendations for multiple expiry categories."""
+        ...
+
+
+@runtime_checkable
+class RecommendationLogger(Protocol):
+    """Port for persisting analysis results to durable storage."""
+
+    def log(
+        self,
+        bias: MarketBias,
+        result: SpreadRecommendation | NoTradeSignal,
+    ) -> None:
+        """Log a bias and recommendation/no-trade result."""
         ...
 
 

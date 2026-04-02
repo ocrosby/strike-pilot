@@ -27,6 +27,8 @@ class StaticMarketDataAdapter:
             "sma_20": 5200.0,
             "sma_50": 5150.0,
             "rsi_14": 58.0,
+            "iv_rank": 0.62,
+            "iv_percentile": 0.55,
             "timestamp": "2024-01-19T10:30:00",
         }
     }
@@ -44,6 +46,8 @@ class StaticMarketDataAdapter:
                 vix=18.0,
                 timestamp="2024-01-19T10:30:00",
             )
+        iv_rank_raw = data.get("iv_rank")
+        iv_percentile_raw = data.get("iv_percentile")
         return MarketSnapshot(
             symbol=symbol,
             price=float(data["price"]),
@@ -55,4 +59,6 @@ class StaticMarketDataAdapter:
             sma_20=float(data.get("sma_20", 0.0)),
             sma_50=float(data.get("sma_50", 0.0)),
             rsi_14=float(data.get("rsi_14", 50.0)),
+            iv_rank=float(iv_rank_raw) if iv_rank_raw is not None else None,
+            iv_percentile=float(iv_percentile_raw) if iv_percentile_raw is not None else None,
         )
