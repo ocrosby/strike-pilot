@@ -258,6 +258,16 @@ class TestExecuteMulti:
         use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
         assert mock_logger.log.call_count == 2
 
+    def test_logger_called_in_execute(self) -> None:
+        use_case = make_use_case()
+        mock_logger = MagicMock()
+        use_case._logger = mock_logger
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        use_case.execute(symbol="SPX", risk_params=risk)
+        mock_logger.log.assert_called_once()
+
 
 class TestAlertService:
     def test_alert_service_called_on_trade(self) -> None:

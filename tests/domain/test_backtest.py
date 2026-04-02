@@ -233,3 +233,11 @@ class TestBacktestResult:
             trades=[make_trade(150.0), make_trade(None)],
         )
         assert result.total_pnl == pytest.approx(150.0)
+
+    def test_average_credit_zero_when_no_trades(self) -> None:
+        result = BacktestResult(config=make_config(), trades=[])
+        assert result.average_credit == pytest.approx(0.0)
+
+    def test_average_pnl_zero_when_no_completed_trades(self) -> None:
+        result = BacktestResult(config=make_config(), trades=[make_trade(None)])
+        assert result.average_pnl == pytest.approx(0.0)

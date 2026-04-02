@@ -192,6 +192,139 @@ class TestDeltaBasedStrikeSelector:
         result = selector.select_strikes(chain, bias, risk)
         assert isinstance(result, NoTradeSignal)
 
+    def test_bull_put_no_trade_when_no_put_strike_available(self) -> None:
+        """All strikes above 0.98 * underlying so price fallback also returns None."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        # put_deltas empty; all strikes above 0.98 * 5000 = 4900 -> no candidates
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=[5200.0, 5300.0],
+            call_premiums={5200.0: 5.0, 5300.0: 3.0},
+            put_premiums={5200.0: 5.0, 5300.0: 3.0},
+            call_deltas={5200.0: 0.4, 5300.0: 0.2},
+            put_deltas={},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, NoTradeSignal)
+
+    def test_bull_put_uses_nearest_long_strike_when_exact_missing(self) -> None:
+        """long_strike_target (5195) absent from premiums; nearest below (5190) used."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        # short_strike = 5200 (closest to 0.20 delta); long = 5195 (missing); nearest = 5190
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5250.0,
+            strikes=[5185.0, 5190.0, 5200.0],
+            call_premiums={5185.0: 3.0, 5190.0: 4.0, 5200.0: 5.0},
+            put_premiums={5185.0: 2.0, 5190.0: 3.0, 5200.0: 5.0},
+            call_deltas={5185.0: 0.22, 5190.0: 0.21, 5200.0: 0.20},
+            put_deltas={5185.0: -0.22, 5190.0: -0.21, 5200.0: -0.20},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, SpreadRecommendation)
+        assert result.long_leg.strike == 5190.0
+
+    def test_bull_put_fallback_to_price_when_put_deltas_empty(self) -> None:
+        """Empty put_deltas triggers price-based short-strike selection."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=10.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        # 0.98 * 5000 = 4900; short_strike = max candidate <= 4900
+        strikes = [4880.0, 4890.0, 4900.0, 4910.0]
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=strikes,
+            call_premiums=dict.fromkeys(strikes, 3.0),
+            put_premiums={4880.0: 2.0, 4890.0: 2.5, 4900.0: 3.0, 4910.0: 4.0},
+            call_deltas=dict.fromkeys(strikes, 0.2),
+            put_deltas={},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.strike == 4900.0
+
+    def test_bear_call_no_trade_when_no_call_strike_available(self) -> None:
+        """All strikes below 1.02 * underlying so price fallback also returns None."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        # call_deltas empty; all strikes below 1.02 * 5000 = 5100 -> no candidates
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=[4700.0, 4800.0],
+            call_premiums={4700.0: 5.0, 4800.0: 3.0},
+            put_premiums={4700.0: 5.0, 4800.0: 3.0},
+            call_deltas={},
+            put_deltas={4700.0: -0.4, 4800.0: -0.3},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, NoTradeSignal)
+
+    def test_bear_call_uses_nearest_long_strike_when_exact_missing(self) -> None:
+        """long_strike_target (5115) absent from premiums; nearest above (5125) used."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        # short_strike = 5110 (closest to 0.20 call delta); long = 5115 (missing); nearest = 5125
+        # net_credit = (8-1)*100=700, max_loss=|5125-5110|*100-700=800 < 1000 -> passes risk check
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=[5100.0, 5110.0, 5125.0],
+            call_premiums={5100.0: 9.0, 5110.0: 8.0, 5125.0: 1.0},
+            put_premiums={5100.0: 9.0, 5110.0: 8.0, 5125.0: 1.0},
+            call_deltas={5100.0: 0.22, 5110.0: 0.20, 5125.0: 0.18},
+            put_deltas={5100.0: -0.22, 5110.0: -0.20, 5125.0: -0.18},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, SpreadRecommendation)
+        assert result.long_leg.strike == 5125.0
+
+    def test_bear_call_no_trade_when_no_long_call_strike_available(self) -> None:
+        """long_strike_target absent from premiums and no higher strike exists."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        # short_strike=5200 (only entry at 0.20 delta); long=5205 (missing); no strike >= 5205
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=[5195.0, 5200.0],
+            call_premiums={5195.0: 4.0, 5200.0: 5.0},
+            put_premiums={5195.0: 4.0, 5200.0: 5.0},
+            call_deltas={5195.0: 0.21, 5200.0: 0.20},
+            put_deltas={5195.0: -0.21, 5200.0: -0.20},
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, NoTradeSignal)
+
+    def test_bear_call_fallback_to_price_when_call_deltas_empty(self) -> None:
+        """Empty call_deltas triggers price-based short-strike selection."""
+        selector = DeltaBasedStrikeSelector(target_short_delta=0.20, spread_width=10.0)
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        # 1.02 * 5000 = 5100; short_strike = min candidate >= 5100
+        strikes = [5090.0, 5100.0, 5110.0, 5120.0]
+        chain = OptionsChain(
+            symbol="SPX",
+            expiry="2024-01-19",
+            underlying_price=5000.0,
+            strikes=strikes,
+            call_premiums={5090.0: 5.0, 5100.0: 4.0, 5110.0: 3.0, 5120.0: 2.0},
+            put_premiums=dict.fromkeys(strikes, 3.0),
+            call_deltas={},
+            put_deltas=dict.fromkeys(strikes, -0.2),
+        )
+        result = selector.select_strikes(chain, bias, make_risk_params())
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.strike == 5100.0
+
 
 class TestProbabilityOfProfitStrikeSelector:
     def test_bull_put_for_bullish_bias(self) -> None:
