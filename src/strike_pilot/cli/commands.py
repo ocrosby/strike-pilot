@@ -16,6 +16,7 @@ from strike_pilot.adapters.csv_logger import CsvRecommendationLogger
 from strike_pilot.adapters.market_data import StaticMarketDataAdapter
 from strike_pilot.adapters.options_chain import StaticOptionsChainAdapter
 from strike_pilot.adapters.presenters import ConsolePresenter, JsonPresenter
+from strike_pilot.adapters.yfinance_market_data import YFinanceMarketDataAdapter
 from strike_pilot.application.use_cases import AnalyzeAndRecommendUseCase
 from strike_pilot.domain.models import ExpiryCategory, RiskParameters
 from strike_pilot.domain.services import DeltaBasedStrikeSelector, SimpleMomentumBiasStrategy
@@ -89,6 +90,14 @@ def cli() -> None:
     type=click.Path(dir_okay=False, writable=True),
     help="Path to a CSV file for logging recommendations.",
 )
+@click.option(
+    "--data-source",
+    "data_source",
+    type=click.Choice(["static", "live"], case_sensitive=False),
+    default="static",
+    show_default=True,
+    help="Market data source: 'static' for hardcoded demo data, 'live' for Yahoo Finance.",
+)
 def analyze_command(
     symbol: str,
     expiry: str | None,
@@ -99,6 +108,7 @@ def analyze_command(
     min_confidence: float,
     output_format: str,
     log_csv: str | None,
+    data_source: str,
 ) -> None:
     """Analyze SPX intraday bias and generate credit spread recommendations."""
     risk_params = RiskParameters(
@@ -110,9 +120,12 @@ def analyze_command(
 
     presenter = JsonPresenter() if output_format == "json" else ConsolePresenter()
     logger = CsvRecommendationLogger(Path(log_csv)) if log_csv else None
+    market_data = (
+        YFinanceMarketDataAdapter() if data_source == "live" else StaticMarketDataAdapter()
+    )
 
     use_case = AnalyzeAndRecommendUseCase(
-        market_data_provider=StaticMarketDataAdapter(),
+        market_data_provider=market_data,
         options_chain_provider=StaticOptionsChainAdapter(),
         bias_strategy=SimpleMomentumBiasStrategy(),
         strike_selector=DeltaBasedStrikeSelector(

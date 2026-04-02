@@ -109,3 +109,18 @@ class TestAnalyzeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["analyze", "--expiry-type", "biweekly"])
         assert result.exit_code != 0
+
+    def test_data_source_static_is_default(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--data-source", "static"])
+        assert result.exit_code == 0
+
+    def test_data_source_invalid_choice_rejected(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--data-source", "bloomberg"])
+        assert result.exit_code != 0
+
+    def test_analyze_help_mentions_data_source(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--help"])
+        assert "data-source" in result.output
