@@ -10,7 +10,9 @@ from strike_pilot.adapters.api.app import create_app
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(create_app())
+    # Use context manager so the lifespan (and startup state) is properly initialised
+    with TestClient(create_app()) as c:
+        yield c  # type: ignore[misc]
 
 
 class TestHealthEndpoint:
@@ -20,6 +22,36 @@ class TestHealthEndpoint:
 
     def test_returns_status_ok(self, client: TestClient) -> None:
         response = client.get("/health")
+        assert response.json() == {"status": "ok"}
+
+
+class TestLivenessProbe:
+    def test_returns_200(self, client: TestClient) -> None:
+        response = client.get("/health/live")
+        assert response.status_code == 200
+
+    def test_returns_status_ok(self, client: TestClient) -> None:
+        response = client.get("/health/live")
+        assert response.json() == {"status": "ok"}
+
+
+class TestReadinessProbe:
+    def test_returns_200(self, client: TestClient) -> None:
+        response = client.get("/health/ready")
+        assert response.status_code == 200
+
+    def test_returns_status_ok(self, client: TestClient) -> None:
+        response = client.get("/health/ready")
+        assert response.json() == {"status": "ok"}
+
+
+class TestStartupProbe:
+    def test_returns_200(self, client: TestClient) -> None:
+        response = client.get("/health/startup")
+        assert response.status_code == 200
+
+    def test_returns_status_ok(self, client: TestClient) -> None:
+        response = client.get("/health/startup")
         assert response.json() == {"status": "ok"}
 
 

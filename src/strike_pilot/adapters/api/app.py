@@ -145,9 +145,41 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
-    @app.get("/health", summary="Health check")
+    @app.get("/health", summary="Health check (alias for /health/live)")
     def health() -> dict[str, str]:
-        """Return service health status."""
+        """Backward-compatible health check — delegates to the liveness probe."""
+        return {"status": "ok"}
+
+    @app.get("/health/live", summary="Liveness probe")
+    def live() -> dict[str, str]:
+        """Return 200 if the process is alive and the event loop is responsive.
+
+        Kubernetes restarts the pod if this probe fails. Keep it cheap — no
+        external dependency checks. If this endpoint can respond, the process
+        is alive.
+        """
+        return {"status": "ok"}
+
+    @app.get("/health/ready", summary="Readiness probe")
+    def ready() -> dict[str, str]:
+        """Return 200 if the service is ready to accept traffic.
+
+        Kubernetes removes the pod from the load balancer (without restarting)
+        if this probe fails. Extend this to check external dependencies — for
+        example, verifying that a live market data feed is reachable — before
+        returning 200.
+        """
+        return {"status": "ok"}
+
+    @app.get("/health/startup", summary="Startup probe")
+    def startup() -> dict[str, str]:
+        """Return 200 once the application has finished initializing.
+
+        Kubernetes uses this probe to give slow-starting containers extra time
+        before the liveness probe begins. For a stateless app with no heavy
+        initialization this passes immediately. Wire real startup work through
+        the FastAPI lifespan context to gate this on completion.
+        """
         return {"status": "ok"}
 
     @app.post("/analyze", response_model=AnalyzeResponse, summary="Analyze and recommend")
