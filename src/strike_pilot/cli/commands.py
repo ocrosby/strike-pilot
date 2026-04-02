@@ -8,6 +8,7 @@ No business logic should appear here.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import click
@@ -28,6 +29,22 @@ from strike_pilot.domain.services import (
     SimpleMomentumBiasStrategy,
     StrikeSelectionStrategy,
 )
+
+
+class ISODate(click.ParamType):
+    """Click parameter type that validates YYYY-MM-DD ISO date strings."""
+
+    name = "DATE"
+
+    def convert(self, value: str, param: click.Parameter | None, ctx: click.Context | None) -> str:
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            self.fail(f"{value!r} is not a valid ISO date (YYYY-MM-DD)", param, ctx)
+        return value
+
+
+ISO_DATE = ISODate()
 
 
 @click.group()
@@ -204,8 +221,10 @@ def analyze_command(
 
 @cli.command("backtest")
 @click.option("--symbol", default="SPX", show_default=True, help="Market symbol to backtest.")
-@click.option("--start", "start_date", required=True, help="Start date (YYYY-MM-DD).")
-@click.option("--end", "end_date", required=True, help="End date (YYYY-MM-DD).")
+@click.option(
+    "--start", "start_date", required=True, type=ISO_DATE, help="Start date (YYYY-MM-DD)."
+)
+@click.option("--end", "end_date", required=True, type=ISO_DATE, help="End date (YYYY-MM-DD).")
 @click.option(
     "--max-loss", default=1000.0, show_default=True, type=float, help="Max loss in dollars."
 )

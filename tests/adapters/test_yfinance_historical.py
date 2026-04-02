@@ -197,3 +197,35 @@ class TestYFinanceHistoricalDataAdapter:
         price = YFinanceHistoricalDataAdapter().get_close_price("SPX", "2024-01-20")
 
         assert price is None
+
+    def test_iv_rank_populated_in_snapshots(self, mocker: pytest.MonkeyPatch) -> None:
+        history = _make_history_df()
+        vix = _make_vix_df()
+        mocker.patch(
+            "strike_pilot.adapters.yfinance_historical.yf.download",
+            side_effect=[history, vix],
+        )
+        start_date = history.index[100].strftime("%Y-%m-%d")
+        end_date = history.index[-1].strftime("%Y-%m-%d")
+
+        snapshots = YFinanceHistoricalDataAdapter().get_snapshots("SPX", start_date, end_date)
+
+        for s in snapshots:
+            assert s.iv_rank is not None
+            assert 0.0 <= s.iv_rank <= 1.0
+
+    def test_iv_percentile_populated_in_snapshots(self, mocker: pytest.MonkeyPatch) -> None:
+        history = _make_history_df()
+        vix = _make_vix_df()
+        mocker.patch(
+            "strike_pilot.adapters.yfinance_historical.yf.download",
+            side_effect=[history, vix],
+        )
+        start_date = history.index[100].strftime("%Y-%m-%d")
+        end_date = history.index[-1].strftime("%Y-%m-%d")
+
+        snapshots = YFinanceHistoricalDataAdapter().get_snapshots("SPX", start_date, end_date)
+
+        for s in snapshots:
+            assert s.iv_percentile is not None
+            assert 0.0 <= s.iv_percentile <= 1.0

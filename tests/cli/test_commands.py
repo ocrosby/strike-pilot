@@ -164,6 +164,38 @@ class TestAnalyzeCommand:
         assert "alert" in result.output
 
 
+class TestBacktestDateValidation:
+    def test_invalid_start_date_rejected(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--start", "not-a-date", "--end", "2024-01-19"])
+        assert result.exit_code != 0
+
+    def test_invalid_end_date_rejected(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--start", "2024-01-15", "--end", "not-a-date"])
+        assert result.exit_code != 0
+
+    def test_invalid_start_date_shows_error_message(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--start", "2024-13-99", "--end", "2024-01-19"])
+        assert result.exit_code != 0
+        assert "Invalid" in result.output or "invalid" in result.output.lower()
+
+    def test_invalid_end_date_shows_error_message(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--start", "2024-01-15", "--end", "2024-13-99"])
+        assert result.exit_code != 0
+        assert "Invalid" in result.output or "invalid" in result.output.lower()
+
+    def test_valid_iso_dates_accepted(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["backtest", "--start", "2024-01-15", "--end", "2024-01-19", "--data-source", "static"],
+        )
+        assert result.exit_code == 0
+
+
 class TestBacktestCommand:
     def test_backtest_help_exits_zero(self) -> None:
         runner = CliRunner()

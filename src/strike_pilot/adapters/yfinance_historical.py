@@ -13,9 +13,15 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pandas as pd
 import yfinance as yf
 
-from strike_pilot.adapters.yfinance_market_data import _compute_rsi, _yfinance_symbol
+from strike_pilot.adapters.yfinance_market_data import (
+    _compute_iv_percentile,
+    _compute_iv_rank,
+    _compute_rsi,
+    _yfinance_symbol,
+)
 from strike_pilot.domain.models import MarketSnapshot
 
 # Extra history needed before start_date to warm up SMA-50 and RSI-14
@@ -72,7 +78,10 @@ class YFinanceHistoricalDataAdapter:
             rsi_14 = _compute_rsi(closes, period=14)
 
             vix_up_to = vix_history[vix_history.index <= idx]
-            vix = float(vix_up_to["Close"].iloc[-1]) if not vix_up_to.empty else 20.0
+            vix_closes = vix_up_to["Close"] if not vix_up_to.empty else pd.Series(dtype=float)
+            vix = float(vix_closes.iloc[-1]) if not vix_closes.empty else 20.0
+            iv_rank = _compute_iv_rank(vix_closes)
+            iv_percentile = _compute_iv_percentile(vix_closes)
 
             snapshots.append(
                 MarketSnapshot(
@@ -86,6 +95,8 @@ class YFinanceHistoricalDataAdapter:
                     sma_20=sma_20,
                     sma_50=sma_50,
                     rsi_14=rsi_14,
+                    iv_rank=iv_rank,
+                    iv_percentile=iv_percentile,
                 )
             )
 
