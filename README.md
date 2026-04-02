@@ -27,11 +27,15 @@ Retail options traders often make discretionary credit spread decisions without 
 Strike Pilot provides a clean, extensible architecture that:
 
 - Aggregates momentum signals into a directional bias score.
-- Applies a delta-targeting strategy to select spread strikes.
+- Applies configurable strike selection strategies (delta targeting, probability of profit, risk-reward) to select spread strikes.
 - Validates every candidate trade against configurable risk parameters before recommending it.
 - Presents results in human-readable or machine-readable (JSON) format.
+- Logs recommendations to CSV for later analysis.
+- Fires configurable alerts (console, logging) when a spread is recommended.
+- Backtests the full strategy over historical data using real or synthetic options chains.
+- Exposes all functionality via an HTTP API (FastAPI) in addition to the CLI.
 
-The architecture is deliberately designed for **replaceability**: swap in live market data, alternative bias strategies, or different output formats without touching the core domain logic.
+The architecture is deliberately designed for **replaceability**: swap in live market data, alternative bias strategies, new alert channels, or different output formats without touching the core domain logic.
 
 ---
 
@@ -41,22 +45,28 @@ Strike Pilot follows a pragmatic **Ports and Adapters (Hexagonal)** architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  CLI (inbound adapter)                                          │
-│  click commands — wires deps, delegates to use cases            │
+│  CLI (inbound adapter)          HTTP API (inbound adapter)      │
+│  click commands                 FastAPI / uvicorn               │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
 │  Application Layer                                              │
-│  AnalyzeAndRecommendUseCase — orchestrates the full workflow    │
+│  AnalyzeAndRecommendUseCase   RunBacktestUseCase                │
 └──────┬───────────────────────────────────────────────────┬──────┘
        │ depends on ports (Protocols)                      │
 ┌──────▼──────────┐                          ┌─────────────▼──────┐
 │  Domain Layer   │                          │  Adapters Layer    │
 │  models         │                          │  StaticMarketData  │
-│  policies       │                          │  StaticOptionsChain│
-│  services       │                          │  ConsolePresenter  │
-│  BiasStrategy   │                          │  JsonPresenter     │
-│  StrikeSelector │                          │  SystemClock       │
+│  policies       │                          │  YFinanceMarketData│
+│  services       │                          │  StaticOptionsChain│
+│  backtest       │                          │  SyntheticChain    │
+│  BiasStrategy   │                          │  StaticHistorical  │
+│  StrikeSelector │                          │  YFinanceHistorical│
+│                 │                          │  ConsolePresenter  │
+│                 │                          │  JsonPresenter     │
+│                 │                          │  SystemClock       │
+│                 │                          │  CsvLogger         │
+│                 │                          │  AlertService      │
 └─────────────────┘                          └────────────────────┘
 ```
 
@@ -66,7 +76,7 @@ Strike Pilot follows a pragmatic **Ports and Adapters (Hexagonal)** architecture
 |-------|----------------|
 | `domain` | Pure Python models and business rules — zero I/O dependencies |
 | `ports` | `Protocol`-based interfaces — contracts between layers |
-| `adapters` | Concrete implementations (mock data today, live feeds tomorrow) |
+| `adapters` | Concrete implementations: static/live data, presenters, API, alerting |
 | `application` | Orchestrates domain + adapters to execute use cases |
 | `cli` | Wires dependencies, delegates to use cases, no business logic |
 
@@ -84,23 +94,37 @@ strike-pilot/
 │       ├── domain/
 │       │   ├── models.py       # MarketBias, SpreadRecommendation, RiskParameters…
 │       │   ├── policies.py     # Risk validation rules (pure functions)
-│       │   └── services.py     # BiasStrategy, StrikeSelectionStrategy, implementations
+│       │   ├── services.py     # BiasStrategy, StrikeSelectionStrategy, implementations
+│       │   ├── backtest.py     # BacktestConfig, BacktestResult, TradeRecord, simulate_pnl
+│       │   ├── expiry.py       # weekly_expiry, expiry date helpers
+│       │   └── iv.py           # IV rank / IV percentile helpers
 │       ├── ports/
 │       │   └── interfaces.py   # Protocol interfaces for all boundaries
 │       ├── adapters/
 │       │   ├── clock.py        # SystemClock, FixedClock
 │       │   ├── market_data.py  # StaticMarketDataAdapter
 │       │   ├── options_chain.py# StaticOptionsChainAdapter
-│       │   └── presenters.py   # ConsolePresenter, JsonPresenter
+│       │   ├── presenters.py   # ConsolePresenter, JsonPresenter
+│       │   ├── csv_logger.py   # CsvRecommendationLogger
+│       │   ├── alert.py        # ConsoleAlertService, LoggingAlertService
+│       │   ├── yfinance_market_data.py  # YFinanceMarketDataAdapter (live data)
+│       │   ├── yfinance_historical.py   # YFinanceHistoricalDataAdapter (backtest)
+│       │   ├── static_historical.py     # StaticHistoricalDataAdapter (testing)
+│       │   ├── synthetic_chain.py       # SyntheticOptionsChainAdapter (Black-Scholes)
+│       │   └── api/
+│       │       ├── app.py      # FastAPI application factory, routes
+│       │       └── models.py   # Pydantic request/response models
 │       ├── application/
-│       │   └── use_cases.py    # AnalyzeAndRecommendUseCase
+│       │   ├── use_cases.py    # AnalyzeAndRecommendUseCase
+│       │   └── backtest.py     # RunBacktestUseCase
 │       └── cli/
 │           └── commands.py     # Click CLI commands
 ├── tests/
 │   ├── domain/                 # Domain model, policy, and service tests
 │   ├── adapters/               # Adapter unit tests
 │   ├── application/            # Use case tests with mocked dependencies
-│   └── cli/                    # CLI integration tests
+│   ├── cli/                    # CLI integration tests
+│   └── integration/            # End-to-end tests with real static adapters
 ├── pyproject.toml
 ├── tasks.py                    # Invoke task definitions
 └── README.md
@@ -154,12 +178,17 @@ You should see a list of available options. If so, you're ready to go.
 
 ## CLI Usage
 
+### `analyze` — intraday bias and spread recommendation
+
 ```bash
 # Run analysis with defaults (console output, next-Friday expiry)
 uv run strike-pilot analyze
 
 # JSON output — machine-readable for downstream processing
 uv run strike-pilot analyze --format json
+
+# Live market data via Yahoo Finance
+uv run strike-pilot analyze --data-source live
 
 # Custom risk parameters
 uv run strike-pilot analyze \
@@ -169,11 +198,61 @@ uv run strike-pilot analyze \
   --spread-width 15 \
   --min-confidence 0.65
 
-# Specify an explicit expiry date
+# Strike selection strategies
+uv run strike-pilot analyze --strategy delta          # default: 20-delta short strike
+uv run strike-pilot analyze --strategy pop            # target probability of profit
+uv run strike-pilot analyze --strategy risk-reward    # target R/R ratio
+
+# Expiry categories (repeatable)
+uv run strike-pilot analyze --expiry-type 0dte
+uv run strike-pilot analyze --expiry-type weekly --expiry-type monthly
+
+# Specify an explicit expiry date (overrides --expiry-type)
 uv run strike-pilot analyze --expiry 2024-02-16
+
+# Log recommendations to CSV
+uv run strike-pilot analyze --log-csv recommendations.csv
+
+# Print a console alert when a spread is recommended
+uv run strike-pilot analyze --alert
 
 # Show all available options
 uv run strike-pilot analyze --help
+```
+
+### `backtest` — replay the strategy over historical data
+
+```bash
+# Run a backtest over a date range using static demo data
+uv run strike-pilot backtest --start 2024-01-15 --end 2024-01-19
+
+# Use live Yahoo Finance historical data
+uv run strike-pilot backtest \
+  --start 2024-01-01 \
+  --end 2024-03-31 \
+  --data-source live
+
+# JSON output for downstream processing
+uv run strike-pilot backtest \
+  --start 2024-01-15 \
+  --end 2024-01-19 \
+  --format json
+
+# Show all available options
+uv run strike-pilot backtest --help
+```
+
+### `serve` — start the HTTP API server
+
+```bash
+# Start on default host/port (127.0.0.1:8000)
+uv run strike-pilot serve
+
+# Custom host and port
+uv run strike-pilot serve --host 0.0.0.0 --port 9000
+
+# Show all available options
+uv run strike-pilot serve --help
 ```
 
 ### Example Console Output
@@ -282,32 +361,50 @@ See [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for the full configur
 
 The architecture is built for extension. Common scenarios:
 
-### Add a live market data provider
-
-1. Create `src/strike_pilot/adapters/live_market_data.py` implementing `MarketDataProvider` from `ports/interfaces.py`.
-2. Wire it in `cli/commands.py`.
-3. Domain and application layers remain untouched.
-
 ### Add an alternative bias strategy
 
 1. Implement a class with an `analyze(snapshot: MarketSnapshot) -> MarketBias` method.
 2. Pass it to `AnalyzeAndRecommendUseCase` via dependency injection.
+3. Optionally expose it as a `--strategy` choice in `cli/commands.py`.
+
+### Add a new strike selection strategy
+
+1. Implement `StrikeSelectionStrategy` from `ports/interfaces.py`.
+2. Wire it in `cli/commands.py` alongside the existing `delta`, `pop`, and `risk-reward` choices.
 
 ### Add a new output format
 
 1. Implement `OutputPresenter` protocol methods (`present_bias`, `present_recommendation`).
 2. Add a new `--format` choice in `cli/commands.py`.
 
+### Add a new alert channel
+
+1. Implement `AlertService` from `ports/interfaces.py` with an `alert(bias, recommendation)` method.
+2. Instantiate and inject it via the `--alert` flag in `cli/commands.py`.
+   See `adapters/alert.py` for reference implementations (console and logging).
+
+### Add a new market data source
+
+1. Implement `MarketDataProvider` and/or `HistoricalDataProvider` from `ports/interfaces.py`.
+2. Add a new `--data-source` choice in `cli/commands.py` and wire the new adapter.
+   `YFinanceMarketDataAdapter` and `YFinanceHistoricalDataAdapter` are the reference live implementations.
+
+### Extend the HTTP API
+
+1. Add new Pydantic request/response models in `adapters/api/models.py`.
+2. Add new routes in `adapters/api/app.py`, delegating to existing use cases via dependency injection.
+3. Domain and application layers remain untouched.
+
 ---
 
 ## Roadmap
 
-- [ ] Live market data adapter (e.g. yfinance, Tradier, IBKR)
+- [x] Live market data adapter (e.g. yfinance, Tradier, IBKR)
 - [x] IV rank / IV percentile signal integration
 - [x] Multi-expiry recommendation support (0DTE vs weekly vs monthly)
-- [ ] Backtesting harness using historical data
+- [x] Backtesting harness using historical data
 - [x] Persistence adapter for logging recommendations to CSV/SQLite
-- [ ] Web API adapter (FastAPI) as an alternative inbound port
-- [ ] Advanced strike selection strategies (risk-reward targeting, probability of profit)
-- [ ] Alerting adapter (email, Slack, SMS)
+- [x] Web API adapter (FastAPI) as an alternative inbound port
+- [x] Advanced strike selection strategies (risk-reward targeting, probability of profit)
+- [x] Alerting adapter (email, Slack, SMS)
 
