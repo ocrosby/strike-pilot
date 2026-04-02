@@ -48,3 +48,34 @@ class TestAnalyzeCommand:
         result = runner.invoke(cli, ["analyze", "--help"])
         assert result.exit_code == 0
         assert "symbol" in result.output.lower()
+
+    def test_analyze_invalid_format(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--format", "xml"])
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output or "invalid choice" in result.output.lower()
+
+    def test_analyze_negative_max_loss(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--max-loss", "-500"])
+        assert result.exit_code != 0
+
+    def test_analyze_negative_min_credit(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--min-credit", "-10"])
+        assert result.exit_code != 0
+
+    def test_analyze_confidence_above_one(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--min-confidence", "1.5"])
+        assert result.exit_code != 0
+
+    def test_analyze_confidence_below_zero(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--min-confidence", "-0.1"])
+        assert result.exit_code != 0
+
+    def test_analyze_negative_spread_width(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--spread-width", "-5"])
+        assert result.exit_code != 0
