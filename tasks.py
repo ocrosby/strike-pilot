@@ -30,14 +30,26 @@ def format(ctx):  # type: ignore[no-untyped-def]
 
 
 @task
+def format_check(ctx):  # type: ignore[no-untyped-def]
+    """Check ruff formatting without making changes (CI gate)."""
+    ctx.run("ruff format --check src tests", pty=True)
+
+
+@task
+def mypy(ctx):  # type: ignore[no-untyped-def]
+    """Run mypy strict type checker on source."""
+    ctx.run("mypy src", pty=True)
+
+
+@task
 def test(ctx):  # type: ignore[no-untyped-def]
     """Run pytest test suite."""
     ctx.run("pytest tests/ -v", pty=True)
 
 
-@task(pre=[lint, test])
+@task(pre=[lint, format_check, mypy, test])
 def check(ctx):  # type: ignore[no-untyped-def]
-    """Run lint and tests together."""
+    """Run lint, format check, type check, and tests together."""
     print("All checks passed.")
 
 
@@ -75,4 +87,4 @@ def docker_clean(ctx, tag=IMAGE_TAG):  # type: ignore[no-untyped-def]
     ctx.run(f"docker rmi {image}", pty=True)
 
 
-ns = Collection(lint, format, test, check, docker_build, docker_run, docker_clean)
+ns = Collection(lint, format, format_check, mypy, test, check, docker_build, docker_run, docker_clean)

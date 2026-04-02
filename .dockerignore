@@ -1,0 +1,27 @@
+# Version control
+.git/
+.github/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Test and lint cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Tests (not needed at runtime)
+tests/
+
+# Development config
+.python-version
+tasks.py
