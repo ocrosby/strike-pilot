@@ -345,37 +345,59 @@ The `serve` command runs a long-lived FastAPI/uvicorn process — a natural fit 
 
 `docker-compose` is intentionally absent: Strike Pilot has no backing services (no database, no cache), so a single container managed with `docker run` is the right scope. Add `docker-compose.yml` when a persistence or caching service joins the stack.
 
+#### Build and run
+
 ```bash
-# Build the image (tagged strike-pilot:latest by default)
+# 1. Build the image (tagged strike-pilot:latest by default)
 uv run invoke docker-build
 
-# Force a clean build (no layer cache)
+# 2. Start the API server (binds to localhost:8000)
+uv run invoke docker-run
+```
+
+The container is running once you see uvicorn's startup log. Verify it with the liveness probe:
+
+```bash
+curl http://localhost:8000/health/live
+# {"status":"ok"}
+```
+
+#### Additional build options
+
+```bash
+# Force a clean build — useful after changing dependencies
 uv run invoke docker-build --no-cache
 
-# Build with a specific tag
+# Tag a release candidate
 uv run invoke docker-build --tag 0.2.0
 
-# Run the API server on localhost:8000
-uv run invoke docker-run
+# Run a specific tagged image
+uv run invoke docker-run --tag 0.2.0
 
-# Bind a different host port
+# Bind to a different host port (container still listens on 8000 internally)
 uv run invoke docker-run --port 9000
 
-# Remove the local image
+# Remove the local image when done
 uv run invoke docker-clean
 ```
 
-You can also use Docker directly if you prefer:
+#### Health probes
+
+The image ships with a `HEALTHCHECK` that targets the liveness endpoint using Python's stdlib (no `curl` needed in the slim image):
+
+| Endpoint | Probe type | Purpose |
+|----------|-----------|---------|
+| `GET /health/live` | Liveness | Restart the container if the process stops responding |
+| `GET /health/ready` | Readiness | Remove from load balancer without restarting; extend to check external deps |
+| `GET /health/startup` | Startup | Give the container time to initialize before liveness kicks in |
+| `GET /health` | — | Backward-compatible alias for `/health/live` |
+
+In Kubernetes, configure the readiness and startup probes in your Pod spec pointing at their dedicated paths. The `HEALTHCHECK` in the `Dockerfile` covers non-Kubernetes environments (`docker run`, Compose).
+
+#### Call the API
 
 ```bash
-docker build -t strike-pilot .
-docker run --rm -p 8000:8000 strike-pilot
-```
-
-Once running, the API is available at `http://localhost:8000`:
-
-```bash
-curl http://localhost:8000/health
+curl http://localhost:8000/health/live
 # {"status":"ok"}
 
 curl -X POST http://localhost:8000/analyze \
