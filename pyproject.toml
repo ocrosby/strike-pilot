@@ -7,7 +7,7 @@ name = "strike-pilot"
 version = "0.1.0"
 description = "SPX intraday bias and credit spread recommendation engine"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "click>=8.1",
     "invoke>=2.2",
@@ -31,7 +31,7 @@ addopts = "-v"
 [tool.ruff]
 line-length = 100
 src = ["src"]
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "ANN", "B", "C4", "SIM", "RUF"]

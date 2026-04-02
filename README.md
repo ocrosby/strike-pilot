@@ -110,24 +110,45 @@ strike-pilot/
 
 ## Requirements
 
-- Python ≥ 3.11
-- [uv](https://github.com/astral-sh/uv) ≥ 0.4
+| Tool | Minimum Version | Check |
+|------|----------------|-------|
+| [Python](https://www.python.org/downloads/) | 3.13 | `python3 --version` |
+| [uv](https://github.com/astral-sh/uv) | 0.4 | `uv --version` |
 
 ---
 
 ## Installation
 
-```bash
-# Install uv if needed
-curl -LsSf https://astral.sh/uv/install.sh | sh
+### 1. Install uv (if not already installed)
 
-# Clone the repository
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+After installing, restart your terminal or run `source ~/.bashrc` (or `source ~/.zshrc`) so the `uv` command is available.
+
+### 2. Clone the repository
+
+```bash
 git clone https://github.com/ocrosby/strike-pilot.git
 cd strike-pilot
+```
 
-# Install project and dev dependencies
+### 3. Install dependencies
+
+```bash
 uv sync --all-extras --dev
 ```
+
+This installs both runtime and development dependencies (pytest, ruff, etc.) into a virtual environment managed by `uv`.
+
+### 4. Verify the installation
+
+```bash
+uv run strike-pilot analyze --help
+```
+
+You should see a list of available options. If so, you're ready to go.
 
 ---
 
@@ -247,7 +268,7 @@ GitHub Actions runs the full lint and test suite on every push and pull request.
 
 Pipeline steps:
 1. Checkout code
-2. Set up Python 3.11
+2. Set up Python 3.13
 3. Install `uv`
 4. `uv sync --all-extras --dev`
 5. `uv run ruff check src tests`
