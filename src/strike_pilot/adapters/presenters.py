@@ -7,7 +7,12 @@ from __future__ import annotations
 
 import json
 
-from strike_pilot.domain.models import MarketBias, NoTradeSignal, SpreadRecommendation
+from strike_pilot.domain.models import (
+    ExpiryRecommendation,
+    MarketBias,
+    NoTradeSignal,
+    SpreadRecommendation,
+)
 
 
 class ConsolePresenter:
@@ -45,6 +50,18 @@ class ConsolePresenter:
             print(f"  R/R Ratio  : {result.risk_reward_ratio:.2f}")
             print(f"  Rationale  : {result.rationale}")
         print()
+
+    def present_multi_recommendations(
+        self,
+        bias: MarketBias,
+        recommendations: list[ExpiryRecommendation],
+    ) -> None:
+        """Print bias header once, then each expiry recommendation."""
+        self.present_bias(bias)
+        for rec in recommendations:
+            label = rec.category.value.upper()
+            print(f"\n--- {label} (expiry: {rec.expiry_date}) ---")
+            self.present_recommendation(rec.result)
 
 
 class JsonPresenter:
@@ -96,3 +113,54 @@ class JsonPresenter:
                 }
             }
         print(json.dumps(data, indent=2))
+
+    def present_multi_recommendations(
+        self,
+        bias: MarketBias,
+        recommendations: list[ExpiryRecommendation],
+    ) -> None:
+        """Print bias and all expiry recommendations as a single JSON object."""
+        recs: list[dict[str, object]] = []
+        for rec in recommendations:
+            entry: dict[str, object] = {
+                "category": rec.category.value,
+                "expiry": rec.expiry_date,
+            }
+            if isinstance(rec.result, NoTradeSignal):
+                entry["action"] = "no_trade"
+                entry["reason"] = rec.result.reason
+            else:
+                entry.update(
+                    {
+                        "action": "trade",
+                        "spread_type": rec.result.spread_type.value,
+                        "short_leg": {
+                            "strike": rec.result.short_leg.strike,
+                            "expiry": rec.result.short_leg.expiry,
+                            "option_type": rec.result.short_leg.option_type,
+                            "action": rec.result.short_leg.action,
+                            "premium": rec.result.short_leg.premium,
+                        },
+                        "long_leg": {
+                            "strike": rec.result.long_leg.strike,
+                            "expiry": rec.result.long_leg.expiry,
+                            "option_type": rec.result.long_leg.option_type,
+                            "action": rec.result.long_leg.action,
+                            "premium": rec.result.long_leg.premium,
+                        },
+                        "net_credit": rec.result.net_credit,
+                        "max_loss": rec.result.max_loss,
+                        "risk_reward_ratio": rec.result.risk_reward_ratio,
+                        "rationale": rec.result.rationale,
+                    }
+                )
+            recs.append(entry)
+        output: dict[str, object] = {
+            "bias": {
+                "direction": bias.direction.value,
+                "confidence": bias.confidence.value,
+                "rationale": bias.rationale,
+            },
+            "recommendations": recs,
+        }
+        print(json.dumps(output, indent=2))

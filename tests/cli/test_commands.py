@@ -79,3 +79,33 @@ class TestAnalyzeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["analyze", "--spread-width", "-5"])
         assert result.exit_code != 0
+
+    def test_analyze_with_expiry_type_weekly(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--expiry-type", "weekly"])
+        assert result.exit_code == 0
+
+    def test_analyze_with_multiple_expiry_types(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["analyze", "--expiry-type", "0dte", "--expiry-type", "monthly"]
+        )
+        assert result.exit_code == 0
+
+    def test_analyze_expiry_overrides_expiry_type(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["analyze", "--expiry", "2024-02-16", "--expiry-type", "monthly"],
+        )
+        assert result.exit_code == 0
+
+    def test_analyze_default_uses_multi(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze"])
+        assert result.exit_code == 0
+
+    def test_analyze_invalid_expiry_type(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--expiry-type", "biweekly"])
+        assert result.exit_code != 0

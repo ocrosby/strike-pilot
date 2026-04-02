@@ -24,6 +24,14 @@ class SpreadType(StrEnum):
     BEAR_CALL = "bear_call"
 
 
+class ExpiryCategory(StrEnum):
+    """Expiry time-frame category for options analysis."""
+
+    ZERO_DTE = "0dte"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
 @dataclass(frozen=True)
 class ConfidenceScore:
     """A normalized confidence score between 0.0 and 1.0."""
@@ -130,6 +138,15 @@ class NoTradeSignal:
     bias: MarketBias | None = None
 
 
+@dataclass(frozen=True)
+class ExpiryRecommendation:
+    """A recommendation tagged with its expiry category and resolved date."""
+
+    category: ExpiryCategory
+    expiry_date: str
+    result: SpreadRecommendation | NoTradeSignal
+
+
 @dataclass
 class MarketSnapshot:
     """Point-in-time market data for SPX analysis."""
@@ -144,6 +161,8 @@ class MarketSnapshot:
     sma_20: float = 0.0
     sma_50: float = 0.0
     rsi_14: float = 50.0
+    iv_rank: float | None = None
+    iv_percentile: float | None = None
     additional_signals: dict[str, float] = field(default_factory=dict)
 
 

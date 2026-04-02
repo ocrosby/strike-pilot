@@ -7,14 +7,17 @@ No business logic should appear here.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from strike_pilot.adapters.clock import SystemClock
+from strike_pilot.adapters.csv_logger import CsvRecommendationLogger
 from strike_pilot.adapters.market_data import StaticMarketDataAdapter
 from strike_pilot.adapters.options_chain import StaticOptionsChainAdapter
 from strike_pilot.adapters.presenters import ConsolePresenter, JsonPresenter
 from strike_pilot.application.use_cases import AnalyzeAndRecommendUseCase
-from strike_pilot.domain.models import RiskParameters
+from strike_pilot.domain.models import ExpiryCategory, RiskParameters
 from strike_pilot.domain.services import DeltaBasedStrikeSelector, SimpleMomentumBiasStrategy
 
 
@@ -34,7 +37,14 @@ def cli() -> None:
 @click.option(
     "--expiry",
     default=None,
-    help="Options expiry date (YYYY-MM-DD). Defaults to next Friday.",
+    help="Explicit expiry date (YYYY-MM-DD). Overrides --expiry-type.",
+)
+@click.option(
+    "--expiry-type",
+    "expiry_types",
+    multiple=True,
+    type=click.Choice(["0dte", "weekly", "monthly"], case_sensitive=False),
+    help="Expiry categories to analyze (repeatable). Defaults to weekly.",
 )
 @click.option(
     "--max-loss",
@@ -72,14 +82,23 @@ def cli() -> None:
     show_default=True,
     help="Output format.",
 )
+@click.option(
+    "--log-csv",
+    "log_csv",
+    default=None,
+    type=click.Path(dir_okay=False, writable=True),
+    help="Path to a CSV file for logging recommendations.",
+)
 def analyze_command(
     symbol: str,
     expiry: str | None,
+    expiry_types: tuple[str, ...],
     max_loss: float,
     min_credit: float,
     spread_width: float,
     min_confidence: float,
     output_format: str,
+    log_csv: str | None,
 ) -> None:
     """Analyze SPX intraday bias and generate credit spread recommendations."""
     risk_params = RiskParameters(
@@ -90,6 +109,7 @@ def analyze_command(
     )
 
     presenter = JsonPresenter() if output_format == "json" else ConsolePresenter()
+    logger = CsvRecommendationLogger(Path(log_csv)) if log_csv else None
 
     use_case = AnalyzeAndRecommendUseCase(
         market_data_provider=StaticMarketDataAdapter(),
@@ -101,6 +121,11 @@ def analyze_command(
         ),
         presenter=presenter,
         clock=SystemClock(),
+        logger=logger,
     )
 
-    use_case.execute(symbol=symbol, risk_params=risk_params, expiry=expiry)
+    if expiry:
+        use_case.execute(symbol=symbol, risk_params=risk_params, expiry=expiry)
+    else:
+        categories = [ExpiryCategory(t) for t in expiry_types] if expiry_types else None
+        use_case.execute_multi(symbol=symbol, risk_params=risk_params, categories=categories)

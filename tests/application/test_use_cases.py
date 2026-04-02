@@ -10,6 +10,8 @@ from strike_pilot.application.use_cases import AnalyzeAndRecommendUseCase
 from strike_pilot.domain.models import (
     BiasDirection,
     ConfidenceScore,
+    ExpiryCategory,
+    ExpiryRecommendation,
     MarketBias,
     MarketSnapshot,
     NoTradeSignal,
@@ -180,3 +182,78 @@ class TestAnalyzeAndRecommendUseCase:
         )
         _, result = use_case.execute(symbol="SPX", risk_params=risk)
         assert isinstance(result, NoTradeSignal)
+
+
+class TestExecuteMulti:
+    def test_returns_bias_and_recommendations(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        bias, recs = use_case.execute_multi(symbol="SPX", risk_params=risk)
+        assert isinstance(bias, MarketBias)
+        assert len(recs) == 1
+        assert isinstance(recs[0], ExpiryRecommendation)
+
+    def test_defaults_to_weekly(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        _, recs = use_case.execute_multi(symbol="SPX", risk_params=risk)
+        assert recs[0].category == ExpiryCategory.WEEKLY
+
+    def test_multiple_categories(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY, ExpiryCategory.MONTHLY]
+        _, recs = use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
+        assert len(recs) == 3
+        assert [r.category for r in recs] == cats
+
+    def test_calls_presenter_multi(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        use_case.execute_multi(symbol="SPX", risk_params=risk)
+        use_case._presenter.present_multi_recommendations.assert_called_once()
+
+    def test_deduplicates_chain_fetches(self) -> None:
+        """When two categories resolve to the same date, chain is fetched once."""
+        # Clock is Monday 2024-01-15. 0DTE=2024-01-15, weekly=2024-01-19 -> different dates
+        # Use Friday so 0DTE and weekly both resolve to 2024-01-19
+        use_case = make_use_case()
+        use_case._clock = FixedClock(datetime(2024, 1, 19, 10, 0, tzinfo=UTC))  # Friday
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY]
+        _, recs = use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
+        assert len(recs) == 2
+        # Both resolve to same date, so get_chain called only once
+        use_case._options_chain.get_chain.assert_called_once()
+
+    def test_each_rec_has_resolved_date(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        # Clock is Monday 2024-01-15
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY]
+        _, recs = use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
+        assert recs[0].expiry_date == "2024-01-15"  # 0DTE = today
+        assert recs[1].expiry_date == "2024-01-19"  # weekly = Friday
+
+    def test_logger_called_for_each_rec(self) -> None:
+        use_case = make_use_case()
+        mock_logger = MagicMock()
+        use_case._logger = mock_logger
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY]
+        use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
+        assert mock_logger.log.call_count == 2

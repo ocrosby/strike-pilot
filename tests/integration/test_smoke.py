@@ -14,6 +14,8 @@ from strike_pilot.adapters.options_chain import StaticOptionsChainAdapter
 from strike_pilot.adapters.presenters import ConsolePresenter, JsonPresenter
 from strike_pilot.application.use_cases import AnalyzeAndRecommendUseCase
 from strike_pilot.domain.models import (
+    ExpiryCategory,
+    ExpiryRecommendation,
     MarketBias,
     NoTradeSignal,
     RiskParameters,
@@ -89,3 +91,19 @@ class TestEndToEndSmoke:
 
         assert isinstance(bias, MarketBias)
         assert isinstance(result, NoTradeSignal)
+
+    def test_multi_expiry_all_categories(self) -> None:
+        use_case = _build_use_case(ConsolePresenter())
+        risk_params = RiskParameters(
+            max_loss_dollars=1000.0,
+            min_credit_dollars=50.0,
+            max_spread_width=10.0,
+            min_confidence_threshold=0.6,
+        )
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY, ExpiryCategory.MONTHLY]
+        bias, recs = use_case.execute_multi(symbol="SPX", risk_params=risk_params, categories=cats)
+
+        assert isinstance(bias, MarketBias)
+        assert len(recs) == 3
+        for rec in recs:
+            assert isinstance(rec, ExpiryRecommendation)
