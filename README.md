@@ -303,10 +303,10 @@ The architecture is built for extension. Common scenarios:
 ## Roadmap
 
 - [ ] Live market data adapter (e.g. yfinance, Tradier, IBKR)
-- [ ] IV rank / IV percentile signal integration
-- [ ] Multi-expiry recommendation support (0DTE vs weekly vs monthly)
+- [x] IV rank / IV percentile signal integration
+- [x] Multi-expiry recommendation support (0DTE vs weekly vs monthly)
 - [ ] Backtesting harness using historical data
-- [ ] Persistence adapter for logging recommendations to CSV/SQLite
+- [x] Persistence adapter for logging recommendations to CSV/SQLite
 - [ ] Web API adapter (FastAPI) as an alternative inbound port
 - [ ] Advanced strike selection strategies (risk-reward targeting, probability of profit)
 - [ ] Alerting adapter (email, Slack, SMS)
