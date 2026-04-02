@@ -18,7 +18,8 @@ class StaticOptionsChainAdapter:
     def get_chain(self, symbol: str, expiry: str) -> OptionsChain:
         """Return a mock options chain centered on a typical SPX price."""
         underlying = 5250.0
-        strikes = [float(s) for s in range(5150, 5360, 5)]
+        # Wide range: ~10% OTM on each side ensures realistic delta coverage
+        strikes = [float(s) for s in range(4700, 5800, 5)]
 
         call_premiums: dict[float, float] = {}
         put_premiums: dict[float, float] = {}

@@ -38,7 +38,7 @@ def cli() -> None:
 )
 @click.option(
     "--max-loss",
-    default=500.0,
+    default=1000.0,
     show_default=True,
     type=float,
     help="Maximum acceptable loss in dollars.",

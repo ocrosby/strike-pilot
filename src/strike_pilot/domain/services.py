@@ -54,24 +54,30 @@ class SimpleMomentumBiasStrategy:
         """Analyze price momentum and RSI to determine bias."""
         signals: list[float] = []
 
-        # Price vs open: positive = bullish signal
+        # Price vs open: normalize so a 1% move = 0.5, 2% = 1.0
         price_change_pct = (snapshot.price - snapshot.open_price) / snapshot.open_price
-        signals.append(price_change_pct * 10)  # scaled
+        signals.append(min(1.0, max(-1.0, price_change_pct * 50)))
 
-        # RSI signal: above 55 bullish, below 45 bearish
-        rsi_signal = (snapshot.rsi_14 - 50.0) / 50.0
+        # RSI signal: normalize so RSI 80 = 0.6 bullish, RSI 20 = 0.6 bearish
+        rsi_signal = min(1.0, max(-1.0, (snapshot.rsi_14 - 50.0) / 25.0))
         signals.append(rsi_signal)
 
-        # SMA signal: price above 20-SMA is bullish
+        # SMA signal: price above 20-SMA is bullish; normalize so 1% above = 0.5
         if snapshot.sma_20 > 0:
-            sma_signal = (snapshot.price - snapshot.sma_20) / snapshot.sma_20 * 10
+            sma_deviation = (snapshot.price - snapshot.sma_20) / snapshot.sma_20 * 50
+            sma_signal = min(1.0, max(-1.0, sma_deviation))
             signals.append(sma_signal)
 
         # VIX: high VIX suppresses confidence
         vix_penalty = max(0.0, (snapshot.vix - 20.0) / 40.0)
 
         avg_signal = sum(signals) / len(signals) if signals else 0.0
-        raw_confidence = min(1.0, abs(avg_signal))
+
+        # Confidence = blend of signal alignment and signal strength
+        aligned_count = sum(1 for s in signals if (s > 0) == (avg_signal > 0) and s != 0)
+        alignment_ratio = aligned_count / len(signals) if signals else 0.5
+        strength = min(1.0, abs(avg_signal))
+        raw_confidence = alignment_ratio * 0.5 + strength * 0.5
         adjusted_confidence = max(0.0, raw_confidence - vix_penalty)
 
         if avg_signal > 0.05:
