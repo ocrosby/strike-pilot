@@ -339,6 +339,72 @@ uv run invoke test      # pytest
 uv run invoke check     # lint + test (pre-commit gate)
 ```
 
+### Docker
+
+The `serve` command runs a long-lived FastAPI/uvicorn process — a natural fit for containerization. The `Dockerfile` builds a minimal image using the official `uv` layer so dependency installation is fast and cached. Only runtime dependencies are installed (`--no-dev`), keeping the image lean.
+
+`docker-compose` is intentionally absent: Strike Pilot has no backing services (no database, no cache), so a single container managed with `docker run` is the right scope. Add `docker-compose.yml` when a persistence or caching service joins the stack.
+
+#### Build and run
+
+```bash
+# 1. Build the image (tagged strike-pilot:latest by default)
+uv run invoke docker-build
+
+# 2. Start the API server (binds to localhost:8000)
+uv run invoke docker-run
+```
+
+The container is running once you see uvicorn's startup log. Verify it with the liveness probe:
+
+```bash
+curl http://localhost:8000/health/live
+# {"status":"ok"}
+```
+
+#### Additional build options
+
+```bash
+# Force a clean build — useful after changing dependencies
+uv run invoke docker-build --no-cache
+
+# Tag a release candidate
+uv run invoke docker-build --tag 0.2.0
+
+# Run a specific tagged image
+uv run invoke docker-run --tag 0.2.0
+
+# Bind to a different host port (container still listens on 8000 internally)
+uv run invoke docker-run --port 9000
+
+# Remove the local image when done
+uv run invoke docker-clean
+```
+
+#### Health probes
+
+The image ships with a `HEALTHCHECK` that targets the liveness endpoint using Python's stdlib (no `curl` needed in the slim image):
+
+| Endpoint | Probe type | Purpose |
+|----------|-----------|---------|
+| `GET /health/live` | Liveness | Restart the container if the process stops responding |
+| `GET /health/ready` | Readiness | Remove from load balancer without restarting; extend to check external deps |
+| `GET /health/startup` | Startup | Give the container time to initialize before liveness kicks in |
+| `GET /health` | — | Backward-compatible alias for `/health/live` |
+
+In Kubernetes, configure the readiness and startup probes in your Pod spec pointing at their dedicated paths. The `HEALTHCHECK` in the `Dockerfile` covers non-Kubernetes environments (`docker run`, Compose).
+
+#### Call the API
+
+```bash
+curl http://localhost:8000/health/live
+# {"status":"ok"}
+
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "SPX"}'
+```
+
 ---
 
 ## CI
