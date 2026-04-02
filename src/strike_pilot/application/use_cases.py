@@ -19,6 +19,7 @@ from strike_pilot.domain.models import (
 )
 from strike_pilot.domain.services import BiasStrategy, StrikeSelectionStrategy
 from strike_pilot.ports.interfaces import (
+    AlertService,
     Clock,
     MarketDataProvider,
     OptionsChainProvider,
@@ -49,6 +50,7 @@ class AnalyzeAndRecommendUseCase:
         presenter: OutputPresenter,
         clock: Clock,
         logger: RecommendationLogger | None = None,
+        alert_service: AlertService | None = None,
     ) -> None:
         self._market_data = market_data_provider
         self._options_chain = options_chain_provider
@@ -57,6 +59,7 @@ class AnalyzeAndRecommendUseCase:
         self._presenter = presenter
         self._clock = clock
         self._logger = logger
+        self._alert_service = alert_service
 
     def execute(
         self,
@@ -87,6 +90,9 @@ class AnalyzeAndRecommendUseCase:
 
         if self._logger is not None:
             self._logger.log(bias, result)
+
+        if self._alert_service is not None and isinstance(result, SpreadRecommendation):
+            self._alert_service.alert(bias, result)
 
         return bias, result
 
@@ -126,9 +132,11 @@ class AnalyzeAndRecommendUseCase:
 
         self._presenter.present_multi_recommendations(bias, recommendations)
 
-        if self._logger is not None:
-            for rec in recommendations:
+        for rec in recommendations:
+            if self._logger is not None:
                 self._logger.log(bias, rec.result)
+            if self._alert_service is not None and isinstance(rec.result, SpreadRecommendation):
+                self._alert_service.alert(bias, rec.result)
 
         return bias, recommendations
 

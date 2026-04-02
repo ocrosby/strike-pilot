@@ -12,7 +12,12 @@ from strike_pilot.domain.models import (
     RiskParameters,
     SpreadRecommendation,
 )
-from strike_pilot.domain.services import DeltaBasedStrikeSelector, SimpleMomentumBiasStrategy
+from strike_pilot.domain.services import (
+    DeltaBasedStrikeSelector,
+    ProbabilityOfProfitStrikeSelector,
+    RiskRewardStrikeSelector,
+    SimpleMomentumBiasStrategy,
+)
 
 
 def make_snapshot(
@@ -181,6 +186,148 @@ class TestDeltaBasedStrikeSelector:
         risk = RiskParameters(
             max_loss_dollars=500.0,
             min_credit_dollars=50.0,
+            max_spread_width=10.0,
+            min_confidence_threshold=0.9,
+        )
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, NoTradeSignal)
+
+
+class TestProbabilityOfProfitStrikeSelector:
+    def test_bull_put_for_bullish_bias(self) -> None:
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=0.80, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.option_type == "put"
+
+    def test_bear_call_for_bearish_bias(self) -> None:
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=0.80, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.option_type == "call"
+
+    def test_short_strike_delta_derived_from_pop(self) -> None:
+        """Short strike delta should be ≈ 1 - target_pop."""
+        target_pop = 0.80
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=target_pop, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        short_delta = abs(chain.put_deltas[result.short_leg.strike])
+        assert abs(short_delta - (1.0 - target_pop)) <= 0.05
+
+    def test_rationale_includes_estimated_pop(self) -> None:
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=0.80, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert "80%" in result.rationale
+
+    def test_no_trade_for_neutral_bias(self) -> None:
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=0.80, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.NEUTRAL, confidence=ConfidenceScore(0.5))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, NoTradeSignal)
+
+    def test_no_trade_when_risk_check_fails(self) -> None:
+        selector = ProbabilityOfProfitStrikeSelector(target_pop=0.80, spread_width=5.0)
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.3))
+        chain = make_options_chain()
+        risk = RiskParameters(
+            max_loss_dollars=500.0,
+            min_credit_dollars=50.0,
+            max_spread_width=10.0,
+            min_confidence_threshold=0.9,
+        )
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, NoTradeSignal)
+
+
+class TestRiskRewardStrikeSelector:
+    def test_bull_put_for_bullish_bias(self) -> None:
+        selector = RiskRewardStrikeSelector(
+            target_short_delta=0.20,
+            target_rr_ratio=5.0,
+            min_spread_width=5.0,
+            max_spread_width=25.0,
+            step=5.0,
+        )
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.option_type == "put"
+
+    def test_bear_call_for_bearish_bias(self) -> None:
+        selector = RiskRewardStrikeSelector(
+            target_short_delta=0.20,
+            target_rr_ratio=5.0,
+            min_spread_width=5.0,
+            max_spread_width=25.0,
+            step=5.0,
+        )
+        bias = MarketBias(direction=BiasDirection.BEARISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert result.short_leg.option_type == "call"
+
+    def test_no_trade_for_neutral_bias(self) -> None:
+        selector = RiskRewardStrikeSelector(
+            target_short_delta=0.20,
+            target_rr_ratio=5.0,
+            min_spread_width=5.0,
+            max_spread_width=25.0,
+            step=5.0,
+        )
+        bias = MarketBias(direction=BiasDirection.NEUTRAL, confidence=ConfidenceScore(0.5))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, NoTradeSignal)
+
+    def test_rationale_mentions_risk_reward(self) -> None:
+        selector = RiskRewardStrikeSelector(
+            target_short_delta=0.20,
+            target_rr_ratio=5.0,
+            min_spread_width=5.0,
+            max_spread_width=25.0,
+            step=5.0,
+        )
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.8))
+        chain = make_options_chain()
+        risk = make_risk_params()
+        result = selector.select_strikes(chain, bias, risk)
+        assert isinstance(result, SpreadRecommendation)
+        assert "R/R" in result.rationale
+
+    def test_no_trade_when_all_widths_fail_risk_check(self) -> None:
+        selector = RiskRewardStrikeSelector(
+            target_short_delta=0.20,
+            target_rr_ratio=5.0,
+            min_spread_width=5.0,
+            max_spread_width=10.0,
+            step=5.0,
+        )
+        bias = MarketBias(direction=BiasDirection.BULLISH, confidence=ConfidenceScore(0.1))
+        chain = make_options_chain()
+        risk = RiskParameters(
+            max_loss_dollars=10.0,
+            min_credit_dollars=500.0,
             max_spread_width=10.0,
             min_confidence_threshold=0.9,
         )

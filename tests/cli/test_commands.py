@@ -124,3 +124,117 @@ class TestAnalyzeCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["analyze", "--help"])
         assert "data-source" in result.output
+
+    def test_strategy_pop_runs_successfully(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--strategy", "pop"])
+        assert result.exit_code == 0
+
+    def test_strategy_risk_reward_runs_successfully(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--strategy", "risk-reward"])
+        assert result.exit_code == 0
+
+    def test_strategy_delta_is_default(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--strategy", "delta"])
+        assert result.exit_code == 0
+
+    def test_invalid_strategy_rejected(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--strategy", "gamma"])
+        assert result.exit_code != 0
+
+    def test_analyze_help_mentions_strategy(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--help"])
+        assert "strategy" in result.output
+
+    def test_alert_flag_runs_successfully(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--alert"])
+        assert result.exit_code == 0
+
+    def test_analyze_help_mentions_alert(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["analyze", "--help"])
+        assert "alert" in result.output
+
+
+class TestBacktestCommand:
+    def test_backtest_help_exits_zero(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--help"])
+        assert result.exit_code == 0
+
+    def test_backtest_help_mentions_start(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--help"])
+        assert "start" in result.output
+
+    def test_backtest_help_mentions_end(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--help"])
+        assert "end" in result.output
+
+    def test_backtest_help_mentions_symbol(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--help"])
+        assert "symbol" in result.output
+
+    def test_backtest_runs_with_static_data(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "backtest",
+                "--start",
+                "2024-01-15",
+                "--end",
+                "2024-01-19",
+                "--data-source",
+                "static",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_backtest_json_format(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "backtest",
+                "--start",
+                "2024-01-15",
+                "--end",
+                "2024-01-19",
+                "--format",
+                "json",
+                "--data-source",
+                "static",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "total_trades" in result.output
+
+    def test_backtest_missing_start_fails(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["backtest", "--end", "2024-01-19"])
+        assert result.exit_code != 0
+
+
+class TestServeCommand:
+    def test_serve_help_exits_zero(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--help"])
+        assert result.exit_code == 0
+
+    def test_serve_help_mentions_host(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--help"])
+        assert "host" in result.output
+
+    def test_serve_help_mentions_port(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["serve", "--help"])
+        assert "port" in result.output

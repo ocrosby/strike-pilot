@@ -257,3 +257,61 @@ class TestExecuteMulti:
         cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY]
         use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
         assert mock_logger.log.call_count == 2
+
+
+class TestAlertService:
+    def test_alert_service_called_on_trade(self) -> None:
+        bias = make_bullish_bias()
+        rec = make_recommendation(bias)
+        use_case = make_use_case(bias=bias, result=rec)
+        mock_alert = MagicMock()
+        use_case._alert_service = mock_alert
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        use_case.execute(symbol="SPX", risk_params=risk)
+        mock_alert.alert.assert_called_once_with(bias, rec)
+
+    def test_alert_service_not_called_on_no_trade(self) -> None:
+        bias = make_bullish_bias()
+        no_trade = NoTradeSignal(reason="Neutral bias")
+        use_case = make_use_case(bias=bias, result=no_trade)
+        mock_alert = MagicMock()
+        use_case._alert_service = mock_alert
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        use_case.execute(symbol="SPX", risk_params=risk)
+        mock_alert.alert.assert_not_called()
+
+    def test_alert_service_is_optional(self) -> None:
+        use_case = make_use_case()
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        bias, _ = use_case.execute(symbol="SPX", risk_params=risk)
+        assert isinstance(bias, MarketBias)  # no error raised
+
+    def test_alert_called_for_each_trade_in_multi(self) -> None:
+        bias = make_bullish_bias()
+        rec = make_recommendation(bias)
+        use_case = make_use_case(bias=bias, result=rec)
+        mock_alert = MagicMock()
+        use_case._alert_service = mock_alert
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        cats = [ExpiryCategory.ZERO_DTE, ExpiryCategory.WEEKLY]
+        use_case.execute_multi(symbol="SPX", risk_params=risk, categories=cats)
+        assert mock_alert.alert.call_count == 2
+
+    def test_alert_not_called_for_no_trade_in_multi(self) -> None:
+        no_trade = NoTradeSignal(reason="No signal")
+        use_case = make_use_case(result=no_trade)
+        mock_alert = MagicMock()
+        use_case._alert_service = mock_alert
+        risk = RiskParameters(
+            max_loss_dollars=500.0, min_credit_dollars=50.0, max_spread_width=10.0
+        )
+        use_case.execute_multi(symbol="SPX", risk_params=risk)
+        mock_alert.alert.assert_not_called()

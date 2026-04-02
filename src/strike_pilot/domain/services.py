@@ -308,3 +308,109 @@ class DeltaBasedStrikeSelector:
         if not candidates:
             return None
         return max(candidates) if below else min(candidates)
+
+
+class ProbabilityOfProfitStrikeSelector:
+    """Selects spread strikes based on a target probability of profit.
+
+    Converts the target PoP into an equivalent delta threshold
+    (target_delta = 1 - target_pop) and delegates strike selection to
+    DeltaBasedStrikeSelector. The rationale includes the estimated PoP so
+    traders can reason in PoP terms rather than raw delta.
+    """
+
+    def __init__(self, target_pop: float, spread_width: float = 10.0) -> None:
+        self._target_pop = target_pop
+        self._inner = DeltaBasedStrikeSelector(
+            target_short_delta=1.0 - target_pop,
+            spread_width=spread_width,
+        )
+
+    def select_strikes(
+        self,
+        chain: OptionsChain,
+        bias: MarketBias,
+        risk_params: RiskParameters,
+    ) -> SpreadRecommendation | NoTradeSignal:
+        """Select strikes targeting the configured probability of profit."""
+        result = self._inner.select_strikes(chain, bias, risk_params)
+        if not isinstance(result, SpreadRecommendation):
+            return result
+        pop_pct = f"{self._target_pop:.0%}"
+        return SpreadRecommendation(
+            spread_type=result.spread_type,
+            short_leg=result.short_leg,
+            long_leg=result.long_leg,
+            net_credit=result.net_credit,
+            max_loss=result.max_loss,
+            bias=result.bias,
+            rationale=f"{result.rationale} (est. PoP: {pop_pct})",
+        )
+
+
+class RiskRewardStrikeSelector:
+    """Selects spread strikes by targeting a desired risk-reward ratio.
+
+    Iterates candidate spread widths from min_spread_width to max_spread_width
+    in steps of step, evaluates each via DeltaBasedStrikeSelector, and picks
+    the width whose resulting R/R ratio is closest to target_rr_ratio.
+    This allows the spread width to vary dynamically rather than being fixed
+    upfront, letting the market structure determine the optimal width for the
+    desired payoff profile.
+    """
+
+    def __init__(
+        self,
+        target_short_delta: float = 0.20,
+        target_rr_ratio: float = 5.0,
+        min_spread_width: float = 5.0,
+        max_spread_width: float = 25.0,
+        step: float = 5.0,
+    ) -> None:
+        self._target_delta = target_short_delta
+        self._target_rr = target_rr_ratio
+        self._min_width = min_spread_width
+        self._max_width = max_spread_width
+        self._step = step
+
+    def select_strikes(
+        self,
+        chain: OptionsChain,
+        bias: MarketBias,
+        risk_params: RiskParameters,
+    ) -> SpreadRecommendation | NoTradeSignal:
+        """Select strikes whose R/R ratio is closest to the configured target."""
+        if bias.direction == BiasDirection.NEUTRAL:
+            return NoTradeSignal(reason="Neutral bias: no trade recommended", bias=bias)
+
+        best: SpreadRecommendation | None = None
+        best_diff = float("inf")
+        width = self._min_width
+        while width <= self._max_width:
+            selector = DeltaBasedStrikeSelector(
+                target_short_delta=self._target_delta,
+                spread_width=width,
+            )
+            candidate = selector.select_strikes(chain, bias, risk_params)
+            if isinstance(candidate, SpreadRecommendation):
+                diff = abs(candidate.risk_reward_ratio - self._target_rr)
+                if diff < best_diff:
+                    best_diff = diff
+                    best = candidate
+            width += self._step
+
+        if best is None:
+            return NoTradeSignal(reason="No spread found matching target R/R", bias=bias)
+
+        return SpreadRecommendation(
+            spread_type=best.spread_type,
+            short_leg=best.short_leg,
+            long_leg=best.long_leg,
+            net_credit=best.net_credit,
+            max_loss=best.max_loss,
+            bias=best.bias,
+            rationale=(
+                f"{best.rationale} "
+                f"(target R/R: {self._target_rr:.1f}, actual: {best.risk_reward_ratio:.1f})"
+            ),
+        )
