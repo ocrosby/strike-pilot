@@ -1,0 +1,1 @@
+"""Strike Pilot domain layer."""
