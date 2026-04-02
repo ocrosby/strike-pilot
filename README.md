@@ -339,6 +339,50 @@ uv run invoke test      # pytest
 uv run invoke check     # lint + test (pre-commit gate)
 ```
 
+### Docker
+
+The `serve` command runs a long-lived FastAPI/uvicorn process — a natural fit for containerization. The `Dockerfile` builds a minimal image using the official `uv` layer so dependency installation is fast and cached. Only runtime dependencies are installed (`--no-dev`), keeping the image lean.
+
+`docker-compose` is intentionally absent: Strike Pilot has no backing services (no database, no cache), so a single container managed with `docker run` is the right scope. Add `docker-compose.yml` when a persistence or caching service joins the stack.
+
+```bash
+# Build the image (tagged strike-pilot:latest by default)
+uv run invoke docker-build
+
+# Force a clean build (no layer cache)
+uv run invoke docker-build --no-cache
+
+# Build with a specific tag
+uv run invoke docker-build --tag 0.2.0
+
+# Run the API server on localhost:8000
+uv run invoke docker-run
+
+# Bind a different host port
+uv run invoke docker-run --port 9000
+
+# Remove the local image
+uv run invoke docker-clean
+```
+
+You can also use Docker directly if you prefer:
+
+```bash
+docker build -t strike-pilot .
+docker run --rm -p 8000:8000 strike-pilot
+```
+
+Once running, the API is available at `http://localhost:8000`:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "SPX"}'
+```
+
 ---
 
 ## CI
