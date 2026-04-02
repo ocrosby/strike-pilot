@@ -53,9 +53,7 @@ class OutputPresenter(Protocol):
         """Present the market bias."""
         ...
 
-    def present_recommendation(
-        self, result: SpreadRecommendation | NoTradeSignal
-    ) -> None:
+    def present_recommendation(self, result: SpreadRecommendation | NoTradeSignal) -> None:
         """Present a spread recommendation or no-trade signal."""
         ...
 

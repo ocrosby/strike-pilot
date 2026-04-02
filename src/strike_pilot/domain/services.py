@@ -139,11 +139,13 @@ class DeltaBasedStrikeSelector:
         if short_strike is None:
             return NoTradeSignal(reason="No suitable put strike found near target delta", bias=bias)
 
-        long_strike = short_strike - self._spread_width
-        if long_strike not in chain.put_premiums:
-            long_strike = self._nearest_strike(chain.strikes, long_strike, below=True)
-        if long_strike is None:
-            return NoTradeSignal(reason="No long put strike available", bias=bias)
+        long_strike_target = short_strike - self._spread_width
+        if long_strike_target not in chain.put_premiums:
+            nearest = self._nearest_strike(chain.strikes, long_strike_target, below=True)
+            if nearest is None:
+                return NoTradeSignal(reason="No long put strike available", bias=bias)
+            long_strike_target = nearest
+        long_strike = long_strike_target
 
         short_premium = chain.put_premiums.get(short_strike, 0.0)
         long_premium = chain.put_premiums.get(long_strike, 0.0)
@@ -194,11 +196,13 @@ class DeltaBasedStrikeSelector:
                 reason="No suitable call strike found near target delta", bias=bias
             )
 
-        long_strike = short_strike + self._spread_width
-        if long_strike not in chain.call_premiums:
-            long_strike = self._nearest_strike(chain.strikes, long_strike, below=False)
-        if long_strike is None:
-            return NoTradeSignal(reason="No long call strike available", bias=bias)
+        long_strike_target = short_strike + self._spread_width
+        if long_strike_target not in chain.call_premiums:
+            nearest = self._nearest_strike(chain.strikes, long_strike_target, below=False)
+            if nearest is None:
+                return NoTradeSignal(reason="No long call strike available", bias=bias)
+            long_strike_target = nearest
+        long_strike = long_strike_target
 
         short_premium = chain.call_premiums.get(short_strike, 0.0)
         long_premium = chain.call_premiums.get(long_strike, 0.0)
@@ -236,14 +240,10 @@ class DeltaBasedStrikeSelector:
             )
         return recommendation
 
-    def _find_put_strike_by_delta(
-        self, chain: OptionsChain, target_delta: float
-    ) -> float | None:
+    def _find_put_strike_by_delta(self, chain: OptionsChain, target_delta: float) -> float | None:
         """Find the put strike closest to the target absolute delta."""
         if not chain.put_deltas:
-            return self._nearest_strike(
-                chain.strikes, chain.underlying_price * 0.98, below=True
-            )
+            return self._nearest_strike(chain.strikes, chain.underlying_price * 0.98, below=True)
         best_strike = None
         best_diff = float("inf")
         for strike, delta in chain.put_deltas.items():
@@ -253,14 +253,10 @@ class DeltaBasedStrikeSelector:
                 best_strike = strike
         return best_strike
 
-    def _find_call_strike_by_delta(
-        self, chain: OptionsChain, target_delta: float
-    ) -> float | None:
+    def _find_call_strike_by_delta(self, chain: OptionsChain, target_delta: float) -> float | None:
         """Find the call strike closest to the target absolute delta."""
         if not chain.call_deltas:
-            return self._nearest_strike(
-                chain.strikes, chain.underlying_price * 1.02, below=False
-            )
+            return self._nearest_strike(chain.strikes, chain.underlying_price * 1.02, below=False)
         best_strike = None
         best_diff = float("inf")
         for strike, delta in chain.call_deltas.items():
@@ -271,9 +267,7 @@ class DeltaBasedStrikeSelector:
         return best_strike
 
     @staticmethod
-    def _nearest_strike(
-        strikes: list[float], target: float, below: bool
-    ) -> float | None:
+    def _nearest_strike(strikes: list[float], target: float, below: bool) -> float | None:
         """Find the nearest available strike at or below/above a target."""
         candidates = [s for s in strikes if (s <= target if below else s >= target)]
         if not candidates:

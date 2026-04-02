@@ -15,17 +15,15 @@ class ConsolePresenter:
 
     def present_bias(self, bias: MarketBias) -> None:
         """Print bias direction and confidence to stdout."""
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print("SPX INTRADAY BIAS ANALYSIS")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
         print(f"Direction  : {bias.direction.value.upper()}")
         print(f"Confidence : {bias.confidence.value:.1%}")
         print(f"Rationale  : {bias.rationale}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
 
-    def present_recommendation(
-        self, result: SpreadRecommendation | NoTradeSignal
-    ) -> None:
+    def present_recommendation(self, result: SpreadRecommendation | NoTradeSignal) -> None:
         """Print spread recommendation or no-trade signal to stdout."""
         if isinstance(result, NoTradeSignal):
             print("\nRECOMMENDATION: NO TRADE")
@@ -63,12 +61,10 @@ class JsonPresenter:
         }
         print(json.dumps(data, indent=2))
 
-    def present_recommendation(
-        self, result: SpreadRecommendation | NoTradeSignal
-    ) -> None:
+    def present_recommendation(self, result: SpreadRecommendation | NoTradeSignal) -> None:
         """Print recommendation as JSON to stdout."""
         if isinstance(result, NoTradeSignal):
-            data: dict = {
+            data: dict[str, object] = {
                 "recommendation": {
                     "action": "no_trade",
                     "reason": result.reason,
